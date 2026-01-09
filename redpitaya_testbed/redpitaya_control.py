@@ -247,17 +247,15 @@ def read_ain(rp: scpi.scpi, name: str) -> float:
 class LivePlotsUnified:
     """
     - Single figure with three vertically stacked subplots:
-        • IN1 (Voltage in V) - plotted batch-wise (only latest block)
-        • AIN0 (V) - full history
-        • AIN1 (V) - full history
+        • IN1 (Voltage in V) - full accumulated history
+        • AIN0 (V) - full accumulated history
+        • AIN1 (V) - full accumulated history
 
     - Relative time:
         • All plots show time relative to acquisition start (t=0)
         • Actual timestamps are preserved in saved data
 
-    - Performance:
-        • IN1 only shows current block, avoiding slowdown from large datasets
-        • AIN0/AIN1 show full history (low data rate)
+    - All channels accumulate data continuously
     """
 
     def __init__(self):
@@ -269,11 +267,9 @@ class LivePlotsUnified:
         # - Store initial timestamp for relative time calculation
         self.t_start: Optional[float] = None
 
-        # - IN1: Only store current block (batch-wise)
-        self.t_in1_current: List[float] = []
-        self.y_in1_current: List[float] = []
-
-        # - AIN0/AIN1: Full history buffers
+        # - Full history buffers for all channels
+        self.t_in1: List[float] = []
+        self.y_in1: List[float] = []
         self.t_ain0: List[float] = []
         self.y_ain0: List[float] = []
         self.t_ain1: List[float] = []
@@ -283,23 +279,23 @@ class LivePlotsUnified:
         self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(10, 8))
         self.fig.suptitle("Red Pitaya Real-Time Acquisition", fontsize=14, fontweight='bold')
 
-        # - IN1 subplot (batch-wise, in Volts)
+        # - IN1 subplot (full history, in Volts)
         self.line1, = self.ax1.plot([], [], 'b-', linewidth=0.5)
-        self.ax1.set_title("IN1 (High-speed ADC - Current Block)")
+        self.ax1.set_title("IN1 (High-speed ADC)")
         self.ax1.set_xlabel("Relative Time (s)")
         self.ax1.set_ylabel("Voltage (V)")
         self.ax1.grid(True, alpha=0.3)
 
         # - AIN0 subplot
         self.line2, = self.ax2.plot([], [], 'g-o', markersize=3)
-        self.ax2.set_title("AIN0 (Slow ADC - Full History)")
+        self.ax2.set_title("AIN0 (Slow ADC)")
         self.ax2.set_xlabel("Relative Time (s)")
         self.ax2.set_ylabel("Voltage (V)")
         self.ax2.grid(True, alpha=0.3)
 
         # - AIN1 subplot
         self.line3, = self.ax3.plot([], [], 'r-o', markersize=3)
-        self.ax3.set_title("AIN1 (Slow ADC - Full History)")
+        self.ax3.set_title("AIN1 (Slow ADC)")
         self.ax3.set_xlabel("Relative Time (s)")
         self.ax3.set_ylabel("Voltage (V)")
         self.ax3.grid(True, alpha=0.3)
@@ -309,7 +305,7 @@ class LivePlotsUnified:
 
     def add_in1_block(self, t_block: np.ndarray, y_block: np.ndarray) -> None:
         """
-        Add IN1 data block (batch-wise - replaces previous block)
+        Add IN1 data block (accumulates all data)
 
         Args:
             t_block: Absolute timestamps for this block
@@ -319,13 +315,13 @@ class LivePlotsUnified:
         if self.t_start is None:
             self.t_start = t_block[0]
 
-        # - Convert to relative time and replace current block
+        # - Convert to relative time and accumulate
         t_relative = (t_block - self.t_start).tolist()
-        self.t_in1_current = t_relative
-        self.y_in1_current = y_block.tolist()
+        self.t_in1.extend(t_relative)
+        self.y_in1.extend(y_block.tolist())
 
     def add_ain0(self, t: float, v: float) -> None:
-        """Add AIN0 data point (keeps full history)"""
+        """Add AIN0 data point (accumulates all data)"""
         if self.t_start is None:
             self.t_start = t
 
@@ -334,7 +330,7 @@ class LivePlotsUnified:
         self.y_ain0.append(v)
 
     def add_ain1(self, t: float, v: float) -> None:
-        """Add AIN1 data point (keeps full history)"""
+        """Add AIN1 data point (accumulates all data)"""
         if self.t_start is None:
             self.t_start = t
 
@@ -343,17 +339,17 @@ class LivePlotsUnified:
         self.y_ain1.append(v)
 
     def draw(self) -> None:
-        # - IN1 update (only current block)
-        self.line1.set_data(self.t_in1_current, self.y_in1_current)
+        # - IN1 update (full accumulated history)
+        self.line1.set_data(self.t_in1, self.y_in1)
         self.ax1.relim()
         self.ax1.autoscale_view()
 
-        # - AIN0 update (full history)
+        # - AIN0 update (full accumulated history)
         self.line2.set_data(self.t_ain0, self.y_ain0)
         self.ax2.relim()
         self.ax2.autoscale_view()
 
-        # - AIN1 update (full history)
+        # - AIN1 update (full accumulated history)
         self.line3.set_data(self.t_ain1, self.y_ain1)
         self.ax3.relim()
         self.ax3.autoscale_view()
@@ -606,11 +602,12 @@ def main(config_path: str = "config.txt") -> None:
             v1 = read_ain(rp, "AIN1")
 
             # -------------------------
-            # - Save data (now in Volts for IN1)
+            # - Save data (IN1 saved as continuous stream, not blocks)
             # -------------------------
             if file_type == "csv":
-                # - IN1 (many rows, now in Volts)
-                in1_w.writerows(zip(t.tolist(), y_volts.tolist()))
+                # - IN1: Write each sample individually (continuous stream)
+                for t_sample, v_sample in zip(t.tolist(), y_volts.tolist()):
+                    in1_w.writerow([t_sample, v_sample])
                 in1_rows_since_flush += n_samples
 
                 # - AIN0/AIN1 (one row each)
@@ -631,7 +628,11 @@ def main(config_path: str = "config.txt") -> None:
                     a1_rows_since_flush = 0
 
             else:
-                # - NPY per-block file names
+                # - NPY: Save each sample individually like analog inputs
+                # - For IN1, we could either:
+                #   (a) Save one file per sample (inefficient, many files)
+                #   (b) Save per-block but as 2-column array (efficient, fewer files)
+                # - We'll use option (b) for NPY format
                 in1_blk = os.path.join(out_dir, f"{prefix}_in1_{blocks:06d}.npy")
                 a0_blk = os.path.join(out_dir, f"{prefix}_ain0_{blocks:06d}.npy")
                 a1_blk = os.path.join(out_dir, f"{prefix}_ain1_{blocks:06d}.npy")
