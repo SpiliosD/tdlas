@@ -13,6 +13,34 @@ import numpy as np
 # - Red Pitaya SCPI helper (you already have this)
 import redpitaya_scpi as scpi
 
+# =========================================================
+# - ADC CONVERSION CONSTANTS
+# =========================================================
+# Red Pitaya STEMlab 125-14 specifications:
+# - ADC resolution: 14 bits
+# - ADC range: ±1V (when using HV jumpers) or ±20V (when using LV jumpers)
+# - For standard configuration (HV): ±1V corresponds to ±8192 counts (2^13)
+ADC_BITS = 14
+ADC_MAX_COUNT = 2 ** (ADC_BITS - 1)  # 8192
+
+
+def raw_to_volts(raw_counts: np.ndarray, voltage_range: float) -> np.ndarray:
+    """
+    Convert raw ADC counts to voltage.
+
+    For Red Pitaya STEMlab 125-14:
+    - ADC range: ±8192 counts = ±1V (HV jumper) or ±20V (LV jumper)
+    - Conversion: V = (raw_count / 8192) * voltage_range
+
+    Args:
+        raw_counts: Raw ADC values from Red Pitaya
+        voltage_range: Voltage range setting (1.0 for HV, 20.0 for LV)
+
+    Returns:
+        Voltage values in Volts
+    """
+    return (raw_counts.astype(np.float64) / ADC_MAX_COUNT) * voltage_range
+
 
 # =========================================================
 # - CONFIG FILE PARSER
@@ -214,12 +242,12 @@ def read_ain(rp: scpi.scpi, name: str) -> float:
 
 
 # =========================================================
-# - PLOTTING (NO TRIMMING)
+# - UNIFIED PLOTTING (3 subplots in 1 figure)
 # =========================================================
-class LivePlotsNoTrim:
+class LivePlotsUnified:
     """
-    - Three separate plots:
-        • IN1 (RAW ADC counts)
+    - Single figure with three vertically stacked subplots:
+        • IN1 (Voltage in V)
         • AIN0 (V)
         • AIN1 (V)
 
@@ -230,6 +258,7 @@ class LivePlotsNoTrim:
     - Warning:
         • Long runs can become slow because matplotlib must redraw many points.
     """
+
     def __init__(self):
         import matplotlib.pyplot as plt
 
@@ -244,28 +273,36 @@ class LivePlotsNoTrim:
         self.t_ain1: List[float] = []
         self.y_ain1: List[float] = []
 
-        # - IN1 figure
-        self.fig1, self.ax1 = plt.subplots()
-        self.line1, = self.ax1.plot([], [])
-        self.ax1.set_title("IN1 (RAW ADC counts)")
+        # - Create single figure with 3 vertically stacked subplots
+        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(10, 8))
+        self.fig.suptitle("Red Pitaya Real-Time Acquisition", fontsize=14, fontweight='bold')
+
+        # - IN1 subplot (now in Volts)
+        self.line1, = self.ax1.plot([], [], 'b-', linewidth=0.5)
+        self.ax1.set_title("IN1 (High-speed ADC)")
         self.ax1.set_xlabel("Time (s)")
-        self.ax1.set_ylabel("Counts")
+        self.ax1.set_ylabel("Voltage (V)")
+        self.ax1.grid(True, alpha=0.3)
 
-        # - AIN0 figure
-        self.fig2, self.ax2 = plt.subplots()
-        self.line2, = self.ax2.plot([], [])
-        self.ax2.set_title("AIN0 (V)")
+        # - AIN0 subplot
+        self.line2, = self.ax2.plot([], [], 'g-o', markersize=3)
+        self.ax2.set_title("AIN0 (Slow ADC)")
         self.ax2.set_xlabel("Time (s)")
-        self.ax2.set_ylabel("Volts")
+        self.ax2.set_ylabel("Voltage (V)")
+        self.ax2.grid(True, alpha=0.3)
 
-        # - AIN1 figure
-        self.fig3, self.ax3 = plt.subplots()
-        self.line3, = self.ax3.plot([], [])
-        self.ax3.set_title("AIN1 (V)")
+        # - AIN1 subplot
+        self.line3, = self.ax3.plot([], [], 'r-o', markersize=3)
+        self.ax3.set_title("AIN1 (Slow ADC)")
         self.ax3.set_xlabel("Time (s)")
-        self.ax3.set_ylabel("Volts")
+        self.ax3.set_ylabel("Voltage (V)")
+        self.ax3.grid(True, alpha=0.3)
+
+        # - Adjust layout to prevent overlap
+        self.fig.tight_layout()
 
     def add_in1_block(self, t_block: np.ndarray, y_block: np.ndarray) -> None:
+        """Add IN1 data block (y_block should already be in Volts)"""
         self.t_in1.extend(t_block.tolist())
         self.y_in1.extend(y_block.tolist())
 
@@ -293,10 +330,9 @@ class LivePlotsNoTrim:
         self.ax3.relim()
         self.ax3.autoscale_view()
 
-        # - Draw and yield to UI loop
-        self.fig1.canvas.draw()
-        self.fig2.canvas.draw()
-        self.fig3.canvas.draw()
+        # - Redraw the single figure
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
         self.plt.pause(0.001)
 
 
@@ -368,6 +404,9 @@ def main(config_path: str = "config.txt") -> None:
     # - Signal recording input
     fs_req = get_float(txt, "sampling_frequency_hz", 488_281.25)
 
+    # - ADC conversion setting
+    adc_voltage_range = get_float(txt, "adc_voltage_range", 1.0)
+
     # - Saving input
     file_type = get_str(txt, "file_type", "csv").lower().strip()
 
@@ -410,8 +449,8 @@ def main(config_path: str = "config.txt") -> None:
     # -----------------------------------------------------
     rp = scpi.scpi(ip, timeout=timeout_s)
 
-    # - Optional plotting
-    plots = LivePlotsNoTrim() if enable_plot else None
+    # - Optional plotting (now unified in single figure)
+    plots = LivePlotsUnified() if enable_plot else None
 
     # -----------------------------------------------------
     # - Setup saving
@@ -461,11 +500,12 @@ def main(config_path: str = "config.txt") -> None:
         print(f"  - requested Fs={fs_req} Hz")
         print(f"  - chosen decimation={decimation}")
         print(f"  - effective Fs={fs_eff:.6f} Hz")
+        print(f"  - ADC conversion: ±{ADC_MAX_COUNT} counts = ±{adc_voltage_range} V")
         print(f"- Saving: file_type={file_type}")
         print(f"  - IN1 : {os.path.abspath(in1_path)}")
         print(f"  - AIN0: {os.path.abspath(ain0_path)}")
         print(f"  - AIN1: {os.path.abspath(ain1_path)}")
-        print(f"- Plotting: {'ON' if enable_plot else 'OFF'}")
+        print(f"- Plotting: {'ON (unified figure)' if enable_plot else 'OFF'}")
         print("- Press Ctrl-C to stop.\n")
 
         # -------------------------------------------------
@@ -478,16 +518,16 @@ def main(config_path: str = "config.txt") -> None:
         # -------------------------------------------------
         # - Configure generator (OUT1) and start it
         # -------------------------------------------------
-        rp.tx_txt("SOUR1:BURS:STAT CONTINUOUS")   # - not burst (no single pulse)
-        rp.tx_txt("SOUR1:TRig:SOUR INTERNAL")     # - free running source
+        rp.tx_txt("SOUR1:BURS:STAT CONTINUOUS")  # - not burst (no single pulse)
+        rp.tx_txt("SOUR1:TRig:SOUR INTERNAL")  # - free running source
 
         rp.tx_txt(f"SOUR1:FUNC {signal_type}")
         rp.tx_txt(f"SOUR1:FREQ:FIX {signal_freq_hz}")
         rp.tx_txt(f"SOUR1:VOLT {amplitude_v}")
         rp.tx_txt(f"SOUR1:VOLT:OFFS {offset_v}")
 
-        rp.tx_txt("OUTPUT1:STATE ON")             # - enable physical output
-        rp.tx_txt("SOUR1:TRig:INT")               # - start generation
+        rp.tx_txt("OUTPUT1:STATE ON")  # - enable physical output
+        rp.tx_txt("SOUR1:TRig:INT")  # - start generation
 
         # -------------------------------------------------
         # - Configure acquisition for IN1 noise recording
@@ -524,8 +564,11 @@ def main(config_path: str = "config.txt") -> None:
             # - Timestamp block start
             t0 = time.time()
 
-            # - Read IN1 samples
-            y = read_rf_bin_raw_int16(rp, n_samples)
+            # - Read IN1 samples (raw ADC counts)
+            y_raw = read_rf_bin_raw_int16(rp, n_samples)
+
+            # - Convert raw counts to Volts using config voltage range
+            y_volts = raw_to_volts(y_raw, adc_voltage_range)
 
             # - Build per-sample timestamps
             t = t0 + (np.arange(n_samples, dtype=np.float64) * dt)
@@ -535,11 +578,11 @@ def main(config_path: str = "config.txt") -> None:
             v1 = read_ain(rp, "AIN1")
 
             # -------------------------
-            # - Save data
+            # - Save data (now in Volts for IN1)
             # -------------------------
             if file_type == "csv":
-                # - IN1 (many rows)
-                in1_w.writerows(zip(t.tolist(), y.tolist()))
+                # - IN1 (many rows, now in Volts)
+                in1_w.writerows(zip(t.tolist(), y_volts.tolist()))
                 in1_rows_since_flush += n_samples
 
                 # - AIN0/AIN1 (one row each)
@@ -565,27 +608,27 @@ def main(config_path: str = "config.txt") -> None:
                 a0_blk = os.path.join(out_dir, f"{prefix}_ain0_{blocks:06d}.npy")
                 a1_blk = os.path.join(out_dir, f"{prefix}_ain1_{blocks:06d}.npy")
 
-                # - Save 2-column arrays (timestamp,value)
-                save_block_to_npy_two_cols(in1_blk, t, y.astype(np.float64))
+                # - Save 2-column arrays (timestamp, value in Volts)
+                save_block_to_npy_two_cols(in1_blk, t, y_volts)
                 save_block_to_npy_two_cols(a0_blk, np.array([t0]), np.array([v0]))
                 save_block_to_npy_two_cols(a1_blk, np.array([t0]), np.array([v1]))
 
             # -------------------------
-            # - Plot (keeps all data)
+            # - Plot (keeps all data, now IN1 is in Volts)
             # -------------------------
             if plots and (blocks % plot_update_every_blocks == 0):
-                plots.add_in1_block(t, y)
+                plots.add_in1_block(t, y_volts)
                 plots.add_ain0(t0, v0)
                 plots.add_ain1(t0, v1)
                 plots.draw()
 
             # -------------------------
-            # - Console progress
+            # - Console progress (now shows voltage statistics)
             # -------------------------
             if print_every_blocks and (blocks % print_every_blocks == 0):
                 print(
-                    f"- [BLOCK {blocks:06d}] IN1 std={float(y.std()):.1f} counts "
-                    f"(min={int(y.min())}, max={int(y.max())}) | "
+                    f"- [BLOCK {blocks:06d}] IN1 std={float(y_volts.std()):.4f} V "
+                    f"(min={float(y_volts.min()):.4f} V, max={float(y_volts.max()):.4f} V) | "
                     f"AIN0={v0:.3f} V | AIN1={v1:.3f} V",
                     flush=True
                 )
