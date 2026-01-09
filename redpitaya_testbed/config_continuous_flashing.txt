@@ -1,0 +1,181 @@
+# =========================================================
+# Red Pitaya Acquisition Configuration File
+# =========================================================
+# - Lines starting with '#' are comments
+# - Format: key = value
+# - Boolean values: 1/0, true/false, yes/no, on/off
+
+# =========================================================
+# NETWORK SETTINGS
+# =========================================================
+# Red Pitaya IP address
+ip = 169.254.7.90
+
+# Connection timeout in seconds
+timeout_s = 5.0
+
+# =========================================================# =========================================================
+# Red Pitaya Continuous Streaming Configuration File
+# =========================================================
+# - Lines starting with '#' are comments
+# - Format: key = value
+# - Boolean values: 1/0, true/false, yes/no, on/off
+
+# =========================================================
+# NETWORK SETTINGS
+# =========================================================
+ip = 169.254.7.90
+timeout_s = 5.0
+
+# =========================================================
+# SIGNAL GENERATION SETTINGS (OUT1)
+# =========================================================
+signal_type = SAWU
+signal_frequency_hz = 1000.0
+amplitude_v = 0.1
+offset_v = 0.2
+
+# =========================================================
+# CONTINUOUS STREAMING SETTINGS (IN1)
+# =========================================================
+# Desired sampling frequency in Hz.
+# Effective Fs is set by decimation against adc_base_rate_hz:
+#   Fs_eff = adc_base_rate_hz / round(adc_base_rate_hz / sampling_frequency_hz)
+sampling_frequency_hz = 122070.3125
+
+# STEMlab 250-14 base ADC rate is typically 250e6
+adc_base_rate_hz = 250000000.0
+
+# Streaming server TCP port (default)
+stream_port = 8900
+
+# Documentation maximum TCP streaming rate (MB/s). Practical may be lower.
+max_tcp_rate_MB_s = 62.5
+
+# Headroom factor for TCP overhead + Python processing
+link_safety = 0.75
+
+# =========================================================
+# ADC CONVERSION SETTINGS
+# =========================================================
+# HV: ±1 V, LV: ±20 V
+adc_voltage_range = 1.0
+
+# =========================================================
+# PLOTTING SETTINGS (IN1 only)
+# =========================================================
+enable_plot = 1
+plot_window_s = 2.0
+plot_update_hz = 20.0
+
+# =========================================================
+# CONSOLE OUTPUT SETTINGS
+# =========================================================
+print_every_s = 1.0
+
+# =========================================================
+# SSH AUTOSTART SETTINGS (starts streaming-server remotely)
+# =========================================================
+enable_ssh_autostart = 1
+
+# Typical user is root on Red Pitaya OS
+ssh_user = root
+ssh_port = 22
+
+# STRONGLY recommended: key-based auth.
+# If empty, ssh will use your default keys (e.g., ~/.ssh/id_rsa) or agent.
+ssh_key_path =
+
+# SSH connect timeout
+ssh_connect_timeout_s = 5.0
+
+# Start command:
+# - Load FPGA overlay for streaming
+# - Start streaming-server in background
+ssh_start_stream_cmd = bash -lc 'overlay.sh stream_app && streaming-server --background'
+
+# Stop command (optional)
+stop_stream_on_exit = 1
+ssh_stop_stream_cmd = bash -lc 'killall streaming-server 2>/dev/null || true'
+
+# SIGNAL GENERATION SETTINGS (OUT1)
+# =========================================================
+# Signal type: SINE, SQUARE, TRIANGLE, SAWU, SAWD, PWM, ARBITRARY, DC
+signal_type = SAWU
+
+# Signal frequency in Hz
+signal_frequency_hz = 1000.0
+
+# Output amplitude in Volts (peak-to-peak / 2)
+amplitude_v = 0.1
+
+# Output DC offset in Volts
+offset_v = 0.2
+
+# =========================================================
+# ACQUISITION SETTINGS (IN1)
+# =========================================================
+# Desired sampling frequency in Hz
+# Note: Actual frequency will be: 125MHz / round(125MHz / sampling_frequency_hz)
+# Common values:
+#   - 125000000 (125 MHz, decimation=1)
+#   - 15625000 (15.625 MHz, decimation=8)
+#   - 1953125 (1.953125 MHz, decimation=64)
+#   - 488281.25 (488.28 kHz, decimation=256)
+#   - 122070.3125 (122.07 kHz, decimation=1024)
+sampling_frequency_hz = 122070.3125
+
+# Number of samples to acquire per block
+# Red Pitaya buffer size is typically 16384 samples
+n_samples = 16384
+
+# =========================================================
+# ADC CONVERSION SETTINGS
+# =========================================================
+# ADC voltage range configuration
+# For HV (High Voltage) jumper: ±1V (default)
+# For LV (Low Voltage) jumper: ±20V
+# Change this to 20.0 if using LV jumpers
+adc_voltage_range = 1.0
+
+# =========================================================
+# DATA SAVING SETTINGS
+# =========================================================
+# File type: csv or npy
+# - csv: Single growing file per channel, human-readable
+# - npy: Per-block binary files, faster for large datasets
+file_type = csv
+
+# Output directory for saved files
+out_dir = ./rp_capture
+
+# File prefix for all output files
+prefix = gen_and_noise
+
+# Flush CSV files every N rows (prevents data loss on crash)
+# Only applies to CSV format
+flush_every_rows = 20000
+
+# =========================================================
+# PLOTTING SETTINGS
+# =========================================================
+# Enable real-time plotting: 1 (on) or 0 (off)
+enable_plot = 1
+
+# Update plots every N blocks
+# Higher values = less frequent updates = better performance
+plot_update_every_blocks = 1
+
+# =========================================================
+# CONSOLE OUTPUT SETTINGS
+# =========================================================
+# Print progress every N blocks
+# Set to 0 to disable console output
+print_every_blocks = 1
+
+# =========================================================
+# RUN DURATION SETTINGS
+# =========================================================
+# Maximum number of blocks to acquire
+# Set to 0 for unlimited (run until Ctrl-C)
+max_blocks = 0
