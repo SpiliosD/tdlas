@@ -1,0 +1,33 @@
+# ==========================================
+# Red Pitaya generate + record (noise-capable)
+# ==========================================
+
+# - Network
+ip = 169.254.7.90
+
+# - Signal generation (OUT1)
+#   Examples: SAWU, SAWD, SIN, TRI, SQU, RAMP
+signal_type = SAWU
+signal_frequency_hz = 100
+amplitude_v = 0.1
+offset_v = 0.2
+
+# - Recording (IN1)
+#   Requested sampling frequency (Hz). The script converts it to decimation.
+sampling_frequency_hz = 100000
+
+# - Saving
+#   csv -> single growing CSV per channel (2 columns: timestamp_s,value)
+#   npy -> per-block NPY files (each file has 2 columns: timestamp_s,value)
+file_type = csv
+
+# - Optional extras
+out_dir = ./rp_capture
+prefix = gen_and_noise
+enable_plot = 1
+n_samples = 16384
+flush_every_rows = 20000
+plot_update_every_blocks = 1
+print_every_blocks = 1
+max_blocks = 0        # 0 = run until Ctrl-C
+timeout_s = 5
